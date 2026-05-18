@@ -1,0 +1,20 @@
+name: dsai490-a2
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+
+  # ── PyTorch ────────────────────────────────────────────────────────────────
+  # CPU-only build (works everywhere). If you have an NVIDIA GPU, replace the
+  # two lines below with:
+  #   - pytorch>=2.1
+  #   - pytorch-cuda=11.8   (or 12.1 depending on your CUDA version)
+  - pytorch>=2.1
+  - cpuonly
+
+  - pip:
+      - tqdm>=4.66
+      - matplotlib>=3.7   # for plotting loss curves in the report
