@@ -201,12 +201,24 @@ def adversarial_train(
             date_fake = model.generator.sample(cond)              # (B, T) sampled
             reward    = model.discriminator(cond, date_fake).sigmoid().detach()  # (B,1)
 
+            # Normalize rewards: zero-mean, unit-variance within the batch.
+            # This ensures G always gets a gradient signal even when D is
+            # very confident (all rewards near 0 or near 1).
+            reward = (reward - reward.mean()) / (reward.std() + 1e-8)
+
             # Log-probs of the sampled sequence under current policy
             log_probs  = model.generator.log_prob(cond, date_fake)  # (B, T)
             mask       = (date_fake != 0).float()                   # ignore PAD
             sum_lp     = (log_probs * mask).sum(dim=1, keepdim=True) # (B,1)
 
-            g_loss = -(reward * sum_lp).mean()
+            # Mix REINFORCE with a small MLE auxiliary loss to keep G stable
+            mle_logits = model.generator.pretrain_forward(cond, date_fake)
+            mle_loss   = F.cross_entropy(
+                mle_logits.reshape(-1, mle_logits.size(-1)),
+                date_fake.reshape(-1), ignore_index=0,
+            )
+
+            g_loss = -(reward * sum_lp).mean() + 0.1 * mle_loss
             g_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.generator.parameters(), 1.0)
             opt_g.step()
@@ -308,7 +320,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch",      type=int,   default=512)
     parser.add_argument("--pretrain_g", type=int,   default=5,
                         help="MLE pre-training epochs for Generator")
-    parser.add_argument("--pretrain_d", type=int,   default=3,
+    parser.add_argument("--pretrain_d", type=int,   default=1,
                         help="Pre-training epochs for Discriminator")
     parser.add_argument("--adv_epochs", type=int,   default=25,
                         help="Adversarial training epochs")
