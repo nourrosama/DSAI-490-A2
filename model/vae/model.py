@@ -35,9 +35,9 @@ import torch.nn.functional as F
 
 # ── Hyper-parameters (match dataset.py constants) ────────────────────────────
 VOCAB_SIZE:    int = 35
-EMBED_DIM:     int = 64
-HIDDEN_DIM:    int = 256
-LATENT_DIM:    int = 64
+EMBED_DIM:     int = 32
+HIDDEN_DIM:    int = 128
+LATENT_DIM:    int = 32
 COND_LEN:      int = 6
 MAX_DATE_LEN:  int = 10
 
