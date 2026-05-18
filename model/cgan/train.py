@@ -109,7 +109,7 @@ def train(args: argparse.Namespace) -> None:
     opt_d = optim.Adam(d_params, lr=args.lr_d, betas=(0.5, 0.999))
 
     history: dict = {"d_loss": [], "g_loss": [], "d_real": [], "d_fake": [], "val_csr": []}
-    best_g_loss = float("inf")
+    best_csr = -1.0
 
     real_label = 0.9   # label smoothing for real samples
     fake_label = 0.0
@@ -179,6 +179,7 @@ def train(args: argparse.Namespace) -> None:
 
         # ── CSR evaluation ───────────────────────────────────────────────
         csr_info = ""
+        overall_csr = 0.0
         if epoch % args.eval_every == 0 or epoch == args.epochs:
             preds = _build_predictions(model, val_loader, tokenizer, device)
             m = evaluate(preds)
@@ -200,11 +201,11 @@ def train(args: argparse.Namespace) -> None:
         history["d_real"].append(avg_dx)
         history["d_fake"].append(avg_dgz)
 
-        # ── Checkpoint ───────────────────────────────────────────────────
-        if avg_g < best_g_loss:
-            best_g_loss = avg_g
+        # ── Checkpoint: save best by CSR (evaluated epochs only) ─────────
+        if overall_csr > best_csr:
+            best_csr = overall_csr
             torch.save(model.state_dict(), WEIGHTS_DIR / "cgan_best.pt")
-            print(f"         ✓ Saved best G checkpoint  (g_loss={best_g_loss:.4f})")
+            print(f"         ✓ Saved best checkpoint  (overall_csr={best_csr:.2%})")
 
     torch.save(model.state_dict(), WEIGHTS_DIR / "cgan_last.pt")
     with open(WEIGHTS_DIR / "history.json", "w") as fh:

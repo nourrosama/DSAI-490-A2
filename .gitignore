@@ -1,0 +1,23 @@
+# Model weights — stored on Drive, not in repo
+model/**/weights/*.pt
+model/**/weights/*.pth
+
+# History JSON (optional — comment out if you want to track it)
+# model/**/weights/history.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Data (large files)
+data/*.txt
+!data/example_input.txt
+
+# OS
+.DS_Store
+Thumbs.db
