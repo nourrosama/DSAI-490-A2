@@ -182,7 +182,7 @@ def adversarial_train(
     history: dict = {
         "g_loss": [], "d_loss": [], "d_real": [], "d_fake": [], "val_csr": []
     }
-    best_g_loss = float("inf")
+    best_csr = -1.0   # save by best CSR, not lowest G loss
 
     for epoch in range(1, args.adv_epochs + 1):
         model.train()
@@ -193,7 +193,7 @@ def adversarial_train(
         for cond, date_real in train_loader:
             cond, date_real = cond.to(device), date_real.to(device)
 
-            # ── Generator step (REINFORCE) ───────────────────────────────
+            # ── Generator step (REINFORCE + MLE auxiliary) ───────────────
             model.generator.train()
             model.discriminator.eval()
             opt_g.zero_grad()
@@ -201,21 +201,23 @@ def adversarial_train(
             date_fake = model.generator.sample(cond)              # (B, T) sampled
             reward    = model.discriminator(cond, date_fake).sigmoid().detach()  # (B,1)
 
-            # Normalize rewards: zero-mean, unit-variance within the batch.
-            # This ensures G always gets a gradient signal even when D is
-            # very confident (all rewards near 0 or near 1).
+            # Normalize rewards so G always gets a gradient even when D
+            # is dominant (all raw rewards near 0). Clamp to avoid explosion
+            # when reward variance is tiny (all rewards nearly identical).
             reward = (reward - reward.mean()) / (reward.std() + 1e-8)
+            reward = reward.clamp(-3.0, 3.0)
 
             # Log-probs of the sampled sequence under current policy
-            log_probs  = model.generator.log_prob(cond, date_fake)  # (B, T)
-            mask       = (date_fake != 0).float()                   # ignore PAD
-            sum_lp     = (log_probs * mask).sum(dim=1, keepdim=True) # (B,1)
+            log_probs = model.generator.log_prob(cond, date_fake)  # (B, T)
+            mask      = (date_fake != 0).float()                   # ignore PAD
+            sum_lp    = (log_probs * mask).sum(dim=1, keepdim=True) # (B,1)
 
-            # Mix REINFORCE with a small MLE auxiliary loss to keep G stable
-            mle_logits = model.generator.pretrain_forward(cond, date_fake)
+            # MLE auxiliary on REAL targets — keeps G close to the data
+            # manifold and prevents it from drifting into invalid sequences.
+            mle_logits = model.generator.pretrain_forward(cond, date_real)
             mle_loss   = F.cross_entropy(
                 mle_logits.reshape(-1, mle_logits.size(-1)),
-                date_fake.reshape(-1), ignore_index=0,
+                date_real.reshape(-1), ignore_index=0,
             )
 
             g_loss = -(reward * sum_lp).mean() + 0.1 * mle_loss
@@ -252,6 +254,7 @@ def adversarial_train(
         avg_dx = sum_dx / n; avg_dgz = sum_dgz / n
 
         csr_info = ""
+        csr = 0.0
         if epoch % args.eval_every == 0 or epoch == args.adv_epochs:
             preds = _build_predictions(model, val_loader, tokenizer, device)
             m = evaluate(preds)
@@ -271,10 +274,11 @@ def adversarial_train(
         history["d_real"].append(avg_dx)
         history["d_fake"].append(avg_dgz)
 
-        if avg_g < best_g_loss:
-            best_g_loss = avg_g
+        # Save best checkpoint by CSR (only on eval epochs)
+        if csr > best_csr:
+            best_csr = csr
             torch.save(model.state_dict(), WEIGHTS_DIR / "seqgan_best.pt")
-            print(f"         ✓ Saved best checkpoint  (g_loss={best_g_loss:.4f})")
+            print(f"         ✓ Saved best checkpoint  (overall_csr={best_csr:.2%})")
 
     torch.save(model.state_dict(), WEIGHTS_DIR / "seqgan_last.pt")
     return history
